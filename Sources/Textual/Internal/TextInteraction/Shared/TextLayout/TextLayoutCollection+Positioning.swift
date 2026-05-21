@@ -60,7 +60,11 @@
     }
 
     func characterIndex(at position: TextPosition) -> Int {
-      let base = layouts.prefix(position.indexPath.layout)
+      guard !layouts.isEmpty else { return 0 }
+      let layoutIndex = position.indexPath.layout
+      if layoutIndex < 0 { return 0 }
+      if layoutIndex >= layouts.count { return stringLength }
+      let base = layouts.prefix(layoutIndex)
         .map(\.attributedString.length)
         .reduce(0, +)
       return base + localCharacterIndex(at: position)
@@ -75,25 +79,40 @@
     }
 
     func localCharacterRange(at indexPath: IndexPath) -> Range<Int> {
-      let line = layouts[indexPath.layout].lines[indexPath.line]
-      return line.runs[indexPath.run]
-        .slices[indexPath.runSlice]
-        .characterRange
+      guard !layouts.isEmpty else { return (0..<0) }
+      // Textual uses a 4-component IndexPath: layout → line → run → runSlice
+      guard indexPath.count >= 4 else { return (0..<0) }
+      let layoutIndex = indexPath.layout
+      guard layouts.indices.contains(layoutIndex) else { return (0..<0) }
+      let lines = layouts[layoutIndex].lines
+      guard lines.indices.contains(indexPath.line) else { return (0..<0) }
+      let runs = lines[indexPath.line].runs
+      guard runs.indices.contains(indexPath.run) else { return (0..<0) }
+      let slices = runs[indexPath.run].slices
+      guard slices.indices.contains(indexPath.runSlice) else { return (0..<0) }
+      return slices[indexPath.runSlice].characterRange
     }
 
     func layoutDirection(at indexPath: IndexPath) -> LayoutDirection {
-      let line = layouts[indexPath.layout].lines[indexPath.line]
-      return line.runs[indexPath.run].layoutDirection
+      guard !layouts.isEmpty, indexPath.count >= 4 else { return .leftToRight }
+      let layoutIndex = indexPath.layout
+      guard layouts.indices.contains(layoutIndex) else { return .leftToRight }
+      let lines = layouts[layoutIndex].lines
+      guard lines.indices.contains(indexPath.line) else { return .leftToRight }
+      let runs = lines[indexPath.line].runs
+      guard runs.indices.contains(indexPath.run) else { return .leftToRight }
+      return runs[indexPath.run].layoutDirection
     }
 
+
     func position(at layoutIndex: Int, localCharacterIndex: Int) -> TextPosition? {
+      guard layouts.indices.contains(layoutIndex) else { return nil }
       guard localCharacterIndex > 0 else {
         return TextPosition(
           indexPath: .init(layout: layoutIndex),
           affinity: .downstream
         )
       }
-
       let layout = layouts[layoutIndex]
       let stringLength = layout.attributedString.length
 
@@ -117,32 +136,32 @@
       }
 
       for (i, line) in zip(layout.lines.indices, layout.lines) {
-        for (j, run) in zip(line.runs.indices, line.runs) {
-          for (k, slice) in zip(run.slices.indices, run.slices) {
-            if slice.characterRange.contains(localCharacterIndex) {
-              return TextPosition(
-                indexPath: .init(
-                  runSlice: k,
-                  run: j,
-                  line: i,
-                  layout: layoutIndex
-                ),
-                affinity: .downstream
-              )
-            } else if slice.characterRange.upperBound == localCharacterIndex {
-              return TextPosition(
-                indexPath: .init(
-                  runSlice: k,
-                  run: j,
-                  line: i,
-                  layout: layoutIndex
-                ),
-                affinity: .upstream
-              )
+            for (j, run) in zip(line.runs.indices, line.runs) {
+              for (k, slice) in zip(run.slices.indices, run.slices) {
+                if slice.characterRange.contains(localCharacterIndex) {
+                  return TextPosition(
+                    indexPath: .init(
+                      runSlice: k,
+                      run: j,
+                      line: i,
+                      layout: layoutIndex
+                    ),
+                    affinity: .downstream
+                  )
+                } else if slice.characterRange.upperBound == localCharacterIndex {
+                  return TextPosition(
+                    indexPath: .init(
+                      runSlice: k,
+                      run: j,
+                      line: i,
+                      layout: layoutIndex
+                    ),
+                    affinity: .upstream
+                  )
+                }
+              }
             }
           }
-        }
-      }
 
       return nil
     }
